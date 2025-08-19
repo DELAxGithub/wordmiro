@@ -1,0 +1,12 @@
+
+Showing Recent Errors Only
+Prepare build
+Multiple commands produce '/Users/hiroshikodera/Library/Developer/Xcode/DerivedData/wordmiro-esxdgekobuvmyqdbztzgvslsaiee/Build/Intermediates.noindex/wordmiro.build/Debug-iphonesimulator/wordmiro.build/Objects-normal/arm64/ContentView.stringsdata'
+
+Multiple commands produce '/Users/hiroshikodera/Library/Developer/Xcode/DerivedData/wordmiro-esxdgekobuvmyqdbztzgvslsaiee/Build/Products/Debug-iphonesimulator/wordmiro.app/Info.plist'
+
+Prepare packages
+Build target wordmiro
+
+
+Activity Log Complete    2025-08-19, 12:53 PM    0.5 seconds

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(mkdir:*)",
+      "Bash(/usr/bin/xcodebuild:*)",
+      "Bash(/usr/bin/xcrun simctl install:*)",
+      "Bash(/usr/bin/xcrun simctl boot:*)",
+      "Bash(/usr/bin/xcrun simctl launch \"iPad Pro 13-inch (M4)\" com.delax.wordmiro)",
+      "Bash(/usr/bin/xcrun simctl launch \"iPad Pro 13-inch (M4)\" com.delax.wordmiro)",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
