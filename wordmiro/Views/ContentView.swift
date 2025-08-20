@@ -4,6 +4,7 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var nodes: [WordNode]
+    @Query private var edges: [WordEdge]
     @StateObject private var viewModel = CanvasViewModel()
     @State private var searchText = ""
     @State private var showingStudyMode = false
@@ -38,7 +39,7 @@ struct ContentView: View {
                         Color.gray.opacity(0.1)
                             .ignoresSafeArea()
                         
-                        CanvasView(nodes: nodes, selectedNode: $viewModel.selectedNode)
+                        CanvasView(nodes: nodes, edges: edges, selectedNode: $viewModel.selectedNode)
                             .onTapGesture { location in
                                 viewModel.selectedNode = nil
                             }
@@ -49,6 +50,14 @@ struct ContentView: View {
             .navigationTitle("WordMiro")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        viewModel.togglePerformanceOverlay()
+                    } label: {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingSettings = true

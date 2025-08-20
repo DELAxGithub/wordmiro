@@ -11,6 +11,7 @@ class CanvasViewModel: ObservableObject {
     
     private let llmService = LLMService.shared
     private let layoutService = LayoutService.shared
+    private let performanceMetrics = PerformanceMetrics.shared
     private var modelContext: ModelContext?
     private var cancellables = Set<AnyCancellable>()
     
@@ -32,6 +33,8 @@ class CanvasViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
+        let startTime = CACurrentMediaTime()
+        
         // Use configured LLM service
         llmService.expandWord(lemma: normalizedLemma)
             .sink(
@@ -41,6 +44,10 @@ class CanvasViewModel: ObservableObject {
                         if case .failure(let error) = completion {
                             self?.errorMessage = error.localizedDescription
                         }
+                        
+                        // Record network performance
+                        let responseTime = CACurrentMediaTime() - startTime
+                        self?.performanceMetrics.recordNetworkResponse(time: responseTime)
                     }
                 },
                 receiveValue: { [weak self] response in
@@ -83,11 +90,19 @@ class CanvasViewModel: ObservableObject {
             let edgeDescriptor = FetchDescriptor<WordEdge>()
             let edges = try modelContext.fetch(edgeDescriptor)
             
-            layoutService.applyForceDirectedLayout(nodes: nodes, edges: edges)
+            // Measure layout performance
+            performanceMetrics.measureLayoutPerformance {
+                layoutService.applyForceDirectedLayout(nodes: nodes, edges: edges)
+            }
+            
             try modelContext.save()
         } catch {
             errorMessage = "Failed to arrange nodes: \(error.localizedDescription)"
         }
+    }
+    
+    func togglePerformanceOverlay() {
+        performanceMetrics.isPerformanceOverlayEnabled.toggle()
     }
     
     private func findNode(by lemma: String) -> WordNode? {

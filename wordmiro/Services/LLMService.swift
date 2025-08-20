@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 struct ExpandRequest: Codable {
     let lemma: String
@@ -22,10 +23,10 @@ struct ExpandResponse: Codable {
     let lemma: String
     let pos: String?
     let register: String?
-    let explanationJA: String
+    var explanationJA: String
     let exampleEN: String?
     let exampleJA: String?
-    let related: [RelatedWord]
+    var related: [RelatedWord]
     
     enum CodingKeys: String, CodingKey {
         case lemma, pos, register, related
@@ -35,6 +36,53 @@ struct ExpandResponse: Codable {
     }
 }
 
+struct ValidationStats {
+    var totalRequests: Int = 0
+    var successfulValidations: Int = 0
+    var repairedResponses: Int = 0
+    var failedValidations: Int = 0
+    var totalResponseTime: TimeInterval = 0
+    var totalValidationTime: TimeInterval = 0
+    var averageExplanationLength: Double = 0
+    var averageRelatedCount: Double = 0
+    var repairHistory: [ValidationRepairLog] = []
+    
+    var successRate: Double {
+        guard totalRequests > 0 else { return 0 }
+        return Double(successfulValidations) / Double(totalRequests)
+    }
+    
+    var repairRate: Double {
+        guard totalRequests > 0 else { return 0 }
+        return Double(repairedResponses) / Double(totalRequests)
+    }
+    
+    var failureRate: Double {
+        guard totalRequests > 0 else { return 0 }
+        return Double(failedValidations) / Double(totalRequests)
+    }
+    
+    var averageResponseTime: TimeInterval {
+        guard totalRequests > 0 else { return 0 }
+        return totalResponseTime / Double(totalRequests)
+    }
+    
+    var averageValidationTime: TimeInterval {
+        guard totalRequests > 0 else { return 0 }
+        return totalValidationTime / Double(totalRequests)
+    }
+}
+
+struct ValidationRepairLog {
+    let lemma: String
+    let originalExplanationLength: Int
+    let repairedExplanationLength: Int
+    let originalRelatedCount: Int
+    let repairedRelatedCount: Int
+    let errorType: String
+    let timestamp: Date
+}
+
 class LLMService: ObservableObject {
     static let shared = LLMService()
     
@@ -42,20 +90,123 @@ class LLMService: ObservableObject {
     private let anthropicService = AnthropicService()
     private let keychain = KeychainService.shared
     private var cancellables = Set<AnyCancellable>()
+    private let logger = Logger(subsystem: "WordMiro", category: "LLMService")
     
     @Published var settings = LLMSettings()
+    @Published var validationStats = ValidationStats()
     
     private init() {
         loadSettings()
     }
     
     func expandWord(lemma: String, locale: String = "ja", maxRelated: Int = 12) -> AnyPublisher<ExpandResponse, Error> {
+        let startTime = CACurrentMediaTime()
+        
+        return getLLMResponse(lemma: lemma, locale: locale)
+            .flatMap { response in
+                self.validateAndSanitizeResponse(response, startTime: startTime)
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    private func getLLMResponse(lemma: String, locale: String) -> AnyPublisher<ExpandResponse, Error> {
         switch settings.provider {
         case .openai:
             return openAIService.expandWord(lemma: lemma, locale: locale)
         case .anthropic:
             return anthropicService.expandWord(lemma: lemma, locale: locale)
         }
+    }
+    
+    private func validateAndSanitizeResponse(_ response: ExpandResponse, startTime: CFTimeInterval) -> AnyPublisher<ExpandResponse, Error> {
+        return Future<ExpandResponse, Error> { promise in
+            let validationStartTime = CACurrentMediaTime()
+            
+            do {
+                // Client-side validation (fallback for when BFF isn't available)
+                try JSONValidator.validateFullResponse(response)
+                
+                // Record successful validation
+                let validationTime = CACurrentMediaTime() - validationStartTime
+                let totalTime = CACurrentMediaTime() - startTime
+                
+                self.recordValidationSuccess(
+                    responseTime: totalTime,
+                    validationTime: validationTime,
+                    explanationLength: response.explanationJA.count,
+                    relatedCount: response.related.count
+                )
+                
+                self.logger.info("Response validation successful for '\(response.lemma)'")
+                promise(.success(response))
+                
+            } catch let validationError as JSONValidationError {
+                self.logger.warning("Validation failed: \(validationError.localizedDescription)")
+                
+                // Attempt auto-repair
+                let sanitizedResponse = JSONValidator.sanitizeResponse(response)
+                
+                do {
+                    try JSONValidator.validateFullResponse(sanitizedResponse)
+                    
+                    self.recordValidationRepair(
+                        originalResponse: response,
+                        repairedResponse: sanitizedResponse,
+                        error: validationError
+                    )
+                    
+                    self.logger.info("Response auto-repair successful for '\(response.lemma)'")
+                    promise(.success(sanitizedResponse))
+                    
+                } catch {
+                    self.recordValidationFailure(error: validationError)
+                    promise(.failure(validationError))
+                }
+                
+            } catch {
+                self.recordValidationFailure(error: error)
+                promise(.failure(error))
+            }
+        }
+        .eraseToAnyPublisher()
+    }
+    
+    private func recordValidationSuccess(responseTime: TimeInterval, validationTime: TimeInterval, explanationLength: Int, relatedCount: Int) {
+        validationStats.totalRequests += 1
+        validationStats.successfulValidations += 1
+        validationStats.totalResponseTime += responseTime
+        validationStats.totalValidationTime += validationTime
+        validationStats.averageExplanationLength = (validationStats.averageExplanationLength + Double(explanationLength)) / 2
+        validationStats.averageRelatedCount = (validationStats.averageRelatedCount + Double(relatedCount)) / 2
+    }
+    
+    private func recordValidationRepair(originalResponse: ExpandResponse, repairedResponse: ExpandResponse, error: JSONValidationError) {
+        validationStats.totalRequests += 1
+        validationStats.repairedResponses += 1
+        
+        let repairLog = ValidationRepairLog(
+            lemma: originalResponse.lemma,
+            originalExplanationLength: originalResponse.explanationJA.count,
+            repairedExplanationLength: repairedResponse.explanationJA.count,
+            originalRelatedCount: originalResponse.related.count,
+            repairedRelatedCount: repairedResponse.related.count,
+            errorType: String(describing: error),
+            timestamp: Date()
+        )
+        
+        validationStats.repairHistory.append(repairLog)
+        
+        // Keep only recent repair history
+        if validationStats.repairHistory.count > 100 {
+            validationStats.repairHistory.removeFirst()
+        }
+    }
+    
+    private func recordValidationFailure(error: Error) {
+        validationStats.totalRequests += 1
+        validationStats.failedValidations += 1
+        
+        logger.error("Validation failure: \(error.localizedDescription)")
     }
     
     func updateSettings(_ newSettings: LLMSettings) {

@@ -11,7 +11,15 @@
       "Bash(/usr/bin/xcrun simctl launch \"iPad Pro 13-inch (M4)\" com.delax.wordmiro)",
       "Bash(git init:*)",
       "Bash(git branch:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(swiftc:*)",
+      "Bash(gh issue close:*)",
+      "Bash(gh issue comment:*)"
     ],
     "deny": [],
     "ask": []
